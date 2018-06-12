@@ -91,6 +91,21 @@ class LossUpdaterModel(Model):
 
 
 
+def build_classifier(img_shape, nb_cat):
+    inputs = Input(shape=img_shape)
+    foo = Conv2D(128, (3, 3), padding='valid', data_format='channels_last')(inputs)
+    foo = Activation('relu')(foo)
+    foo = Dropout(0.25)(foo)
+    foo = Flatten()(foo)
+    foo = Dense(128)(foo)
+    foo = Activation('relu')(foo)
+    foo = Dropout(0.25)(foo)
+    outputs = Dense(nb_cat, activation='sigmoid')(foo)
+    model = LossUpdaterModel(inputs, outputs)
+    return model
+
+
+
 def build_generator(img_shape=(28,28,1), noise_shape=(1,)):
     '''Construct generator for borgne setting'''
 
@@ -125,15 +140,6 @@ def build_generator(img_shape=(28,28,1), noise_shape=(1,)):
 
     model = Model(inputs=inputs, outputs=predictions)
     return model
-
-def build_generator(img_shape, noise_shape):
-    '''simplistic, for tests only'''
-    inputs = Input(shape=noise_shape)
-    foo = Dense(np.prod(img_shape), activation='relu') (inputs)
-    outputs = Reshape(img_shape) (foo)
-    model = Model(inputs=inputs, outputs=outputs)
-    return model
-
 
 
 def sample_images(epoch, generator, noise_size, image_path):
@@ -221,11 +227,11 @@ def borgne_train(img_shape, noise_shape, nb_class, target_class, target_path, im
         
         # print & log module
         if epoch % print_freq == 0:
-            print(epoch, s_loss, g_loss, m_global, sep=' -/- ')
+            print(epoch, s_loss, g_loss, m_glob, sep=' -/- ')
             sample_images(epoch, generator, noise_size, image_path)
-            logger.append([epoch, s_loss, g_loss, s_cat, s_tc, g_cat, m_global])
+            logger.append([epoch, s_loss, g_loss, s_cat, s_tc, g_cat, m_glob])
         elif epoch % log_freq == 0:
-            logger.append([epoch, s_loss, g_loss, s_cat, s_tc, g_cat, m_global])
+            logger.append([epoch, s_loss, g_loss, s_cat, s_tc, g_cat, m_glob])
         if epoch !=0 and epoch % save_freq == 0:
             shadow.save(save_model_path + 'current_shadow.h5')
             generator.save(save_model_path + 'current_generator.h5')
@@ -236,7 +242,7 @@ def borgne_train(img_shape, noise_shape, nb_class, target_class, target_path, im
     generator.save(save_model_path + 'trained_generator.h5')
     combined.save(save_model_path + 'trained_combined.h5')
 
-    logger.append([nb_epochs, s_loss, g_loss, s_cat, s_tc, g_cat, m_global])
+    logger.append([nb_epochs, s_loss, g_loss, s_cat, s_tc, g_cat, m_glob])
     sample_images(nb_epochs, generator, noise_size, image_path)
     print('Training is over')
     
