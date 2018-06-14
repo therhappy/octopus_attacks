@@ -226,7 +226,7 @@ def borgne_train(img_shape, noise_shape, nb_class, target_class, target_path, im
             combined_y[:,target_class] = 1
             g_loss, g_cat = combined.train_on_batch(noise, combined_y)
         else:
-            g_loss= 0.
+            g_loss, g_cat= 0., 0.
         
         # print & log module
         if epoch % print_freq == 0:
