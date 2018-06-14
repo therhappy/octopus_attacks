@@ -161,7 +161,7 @@ def sample_images(epoch, generator, noise_size, image_path):
     fig.savefig(image_path + '%10.3d.png' % epoch)
     plt.close()
 
-def borgne_train(img_shape, noise_shape, nb_class, target_class, target_path, image_path, save_model_path, nb_epochs, batch_size=32, log_freq=100, print_freq=1000, save_freq=5000):
+def borgne_train(img_shape, noise_shape, nb_class, target_class, target_path, image_path, save_model_path, nb_epochs, observe=0, batch_size=32, log_freq=100, print_freq=1000, save_freq=5000):
         # Initialize optimizers
     g_opt = Adam(lr=1E-4, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
     d_on_g_opt = Adam(lr=1E-4, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
@@ -219,11 +219,14 @@ def borgne_train(img_shape, noise_shape, nb_class, target_class, target_path, im
         m_glob = shadow.loss.m_global
 
         # train generator
-        #noise = np.random.normal(0,1,(batch_size, noise_size))
-        noise = np.ones((batch_size, noise_size))
-        combined_y = np.zeros((batch_size, nb_class))
-        combined_y[:,target_class] = 1
-        g_loss, g_cat = combined.train_on_batch(noise, combined_y)
+        if epoch > observe:
+            noise = np.random.normal(0,1,(batch_size, noise_size))
+            #noise = np.ones((batch_size, noise_size))
+            combined_y = np.zeros((batch_size, nb_class))
+            combined_y[:,target_class] = 1
+            g_loss, g_cat = combined.train_on_batch(noise, combined_y)
+        else:
+            g_loss= 0.
         
         # print & log module
         if epoch % print_freq == 0:
