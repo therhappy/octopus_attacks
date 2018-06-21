@@ -8,6 +8,8 @@ import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 
+from networks_architectures import *
+
 
 
 def wasserstein_loss(y_true, y_pred):
@@ -90,58 +92,6 @@ class LossUpdaterModel(Model):
         return updates
 
 
-
-def build_classifier(img_shape, nb_cat):
-    inputs = Input(shape=img_shape)
-    foo = Conv2D(128, (3, 3), padding='valid', data_format='channels_last')(inputs)
-    foo = Activation('relu')(foo)
-    foo = Dropout(0.25)(foo)
-    foo = Flatten()(foo)
-    foo = Dense(128)(foo)
-    foo = Activation('relu')(foo)
-    foo = Dropout(0.25)(foo)
-    outputs = Dense(nb_cat, activation='sigmoid')(foo)
-    model = LossUpdaterModel(inputs, outputs)
-    return model
-
-
-
-def build_generator(img_shape=(28,28,1), noise_shape=(1,)):
-    '''Construct generator for borgne setting'''
-
-    # Pictures dimensions
-    IMG_HEIGHT, IMG_WIDTH, NB_CHANNELS_INPUTS = img_shape
-
-    # Input layer
-    inputs = Input(shape=noise_shape)
-    foo = Dense(7*7, activation='linear')(inputs)
-    foo = BatchNormalization()(foo)
-
-    img = Reshape((7,7,1))(foo) # tensor (batch, x, y, channel)
-    foo = Conv2D(128, kernel_size=(3,3), padding='same')(img)
-    foo = Activation('relu')(foo)
-    # for MNIST : ?,7,7,128
-
-    foo = UpSampling2D(size=(2, 2), data_format='channels_last')(foo)
-    foo = Conv2D(filters=128, kernel_size=(3,3), padding="same")(foo)
-    foo = Activation('relu')(foo)
-    # for MNIST : ?,14,14,64
-
-    foo = UpSampling2D(size=(2, 2), data_format='channels_last')(foo)
-    foo = Conv2D(filters=64, kernel_size=(3,3), padding="same")(foo)
-    foo = Activation('relu')(foo)
-    # for MNIST : ?,28,28,32
-
-    foo = Conv2D(filters=1, kernel_size=(1,1), padding="same")(foo)
-    # for MNIST : ?,28,28,1
-    
-    #A sigmoid layer to have outputs between 0 and 1
-    predictions = Activation('sigmoid')(foo)
-
-    model = Model(inputs=inputs, outputs=predictions)
-    return model
-
-
 def sample_images(epoch, generator, noise_size, image_path):
     '''Call during training to print samples of images generated'''
     r, c = 5, 5
@@ -167,7 +117,7 @@ def borgne_train(img_shape, noise_shape, nb_class, target_class, target_path, im
     d_on_g_opt = Adam(lr=1E-4, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
 
     # Initialize base entities
-    shadow = build_classifier(img_shape, nb_class)
+    shadow = build_classifier_2conv(img_shape, nb_class)
     generator = build_generator(img_shape=img_shape, noise_shape=noise_shape)
     target = load_model(target_path)
     print('Models retrieved')
@@ -195,51 +145,56 @@ def borgne_train(img_shape, noise_shape, nb_class, target_class, target_path, im
 
     # Prepare logs
     logger = []
+    state = 0
     
     # Prepare to split the batch
     mid = int(batch_size/2)
 
-    # Training loop ########################################"
-    for epoch in range(nb_epochs):
-        
-        # set seed for replication
-        np.random.seed(epoch)
+    # Training loop ########################################
+    try:
+        for epoch in range(nb_epochs):
+            
+            # set seed for replication
+            np.random.seed(epoch)
 
-        # train shadow
-        noise = np.random.normal(0,1,(mid, noise_size))
-        shadow_X1 = generator.predict(noise) # make half the batch a prediction
-        shadow_X2 = np.random.normal(0,1,(batch_size - mid,) + img_shape) # other half is noise
-        shadow_y1 = target.predict(shadow_X1)
-        shadow_y2 = target.predict(shadow_X2)
-        shadow_X, shadow_y = np.zeros((batch_size,) + img_shape), np.zeros((batch_size, nb_class))
-        # ShadowLoss currently required even=noise,  odd=generated
-        shadow_X[::2], shadow_y[::2] = shadow_X2, shadow_y2
-        shadow_X[1::2], shadow_y[1::2] = shadow_X1, shadow_y1
-        s_loss, s_cat, s_tc = shadow.train_on_batch(shadow_X, shadow_y)
-        m_glob = shadow.loss.m_global
+            # train shadow
+            noise = np.random.normal(0,1,(mid, noise_size))
+            shadow_X1 = generator.predict(noise) # make half the batch a prediction
+            shadow_X2 = np.random.normal(0,1,(batch_size - mid,) + img_shape) # other half is noise
+            shadow_y1 = target.predict(shadow_X1)
+            shadow_y2 = target.predict(shadow_X2)
+            shadow_X, shadow_y = np.zeros((batch_size,) + img_shape), np.zeros((batch_size, nb_class))
+            # ShadowLoss currently required even=noise,  odd=generated
+            shadow_X[::2], shadow_y[::2] = shadow_X2, shadow_y2
+            shadow_X[1::2], shadow_y[1::2] = shadow_X1, shadow_y1
+            s_loss, s_cat, s_tc = shadow.train_on_batch(shadow_X, shadow_y)
+            m_glob = shadow.loss.m_global
 
-        # train generator
-        if epoch > observe:
-            noise = np.random.normal(0,1,(batch_size, noise_size))
-            #noise = np.ones((batch_size, noise_size))
-            combined_y = np.zeros((batch_size, nb_class))
-            combined_y[:,target_class] = 1
-            g_loss, g_cat = combined.train_on_batch(noise, combined_y)
-        else:
-            g_loss, g_cat= 0., 0.
-        
-        # print & log module
-        if epoch % print_freq == 0:
-            print(epoch, s_loss, g_loss, m_glob, sep=' -/- ')
-            sample_images(epoch, generator, noise_size, image_path)
-            logger.append([epoch, s_loss, g_loss, s_cat, s_tc, g_cat, m_glob])
-        elif epoch % log_freq == 0:
-            logger.append([epoch, s_loss, g_loss, s_cat, s_tc, g_cat, m_glob])
-        if epoch !=0 and epoch % save_freq == 0:
-            shadow.save(save_model_path + 'current_shadow.h5')
-            generator.save(save_model_path + 'current_generator.h5')
-            combined.save(save_model_path + 'current_combined.h5')
-            print('Models saved')
+            # train generator
+            if epoch > observe:
+                noise = np.random.normal(0,1,(batch_size, noise_size))
+                #noise = np.ones((batch_size, noise_size))
+                combined_y = np.zeros((batch_size, nb_class))
+                combined_y[:,target_class] = 1
+                g_loss, g_cat = combined.train_on_batch(noise, combined_y)
+            else:
+                g_loss, g_cat= 0., 0.
+            
+            # print & log module
+            if epoch % print_freq == 0:
+                print(epoch, s_loss, g_loss, m_glob, sep=' -/- ')
+                sample_images(epoch, generator, noise_size, image_path)
+                logger.append([epoch, s_loss, g_loss, s_cat, s_tc, g_cat, m_glob])
+            elif epoch % log_freq == 0:
+                logger.append([epoch, s_loss, g_loss, s_cat, s_tc, g_cat, m_glob])
+            if epoch !=0 and epoch % save_freq == 0:
+                shadow.save(save_model_path + 'current_shadow.h5')
+                generator.save(save_model_path + 'current_generator.h5')
+                combined.save(save_model_path + 'current_combined.h5')
+                print('Models saved')
+    except KeyboardInterrupt:
+        print('While training, received KeyboardInterrupt. Attempting to save models, images and logs.')
+        state = 1
     
     shadow.save(save_model_path + 'trained_shadow.h5')
     generator.save(save_model_path + 'trained_generator.h5')
@@ -249,4 +204,4 @@ def borgne_train(img_shape, noise_shape, nb_class, target_class, target_path, im
     sample_images(nb_epochs, generator, noise_size, image_path)
     print('Training is over')
     
-    return logger
+    return logger, state
